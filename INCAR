@@ -1,0 +1,21 @@
+# INCAR FILE
+
+SYSTEM=Mo2C
+NCORE  = 24 
+PREC=Accurate # Good for most calcs
+LREAL = Auto
+EDIFF  = 1E-6        # Electronic crit
+ISMEAR =  1  # For metal ionic opts 
+SIGMA   =  0.20 
+ALGO = Fast   
+#IVDW=2
+EDIFFG = -0.05       # Ionic crit/ALWAYS INCLUDE NEG SIGN! 
+NSW    = 1000        #  Max ionic steps
+IBRION =  1          # Quasi-Newton Best for good starting geometries 
+#POTIM  = 0.50
+LWAVE = .FALSE.
+LCHARG = .FALSE.
+LVTOT = .FALSE.
+IDIPOL = 3
+LDIPOL = .TRUE.
+
