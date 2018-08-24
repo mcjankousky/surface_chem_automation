@@ -10,8 +10,12 @@ import numpy as np
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.core.surface import SlabGenerator
 from pymatgen.analysis.adsorption import AdsorbateSiteFinder
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 import itertools
 import os
+#import networkx as nx
+#import json
+from scipy.spatial import distance
 
 """
 The script below provides a framework which can be used to create slabs with
@@ -19,7 +23,7 @@ varying coverage conditions from a root slab that has been generated elsewhere
 """
 
 
-slab = Poscar.from_file(os.getcwd() + "\\Mo2C\\orthorhombic\\example_slab\\POSCAR").structure
+slab = Poscar.from_file("C:\\Users\mjankous\Documents\VASP_files\Mo2C\\orthorhombic\\ex_slab\\POSCAR").structure
 #a choice of root slab that I have been using to test out the framework below
 
 
@@ -63,8 +67,7 @@ def make_NH3():
     return mol
 
 def make_H():
-    #creates an ammonia molecule to adsorb to the surface
-    #only one orientation, because I've mostly only seen this configuration for NH3 on surfaces
+    #creates an hydrogen atom to adsorb to the surface
     mol = mg.core.structure.Molecule(['H'],[np.array([0,0,0])])
     return mol
 
@@ -78,7 +81,7 @@ def make_site_combos(slab,n_sites):
     return site_combos
 
 
-def save_site_combos(slab, adsorbate, path, n_sites, dist_reduce=2.1):
+def create_coord_combos(slab, n_sites, dist_reduce=2.1):
     site_combos = make_site_combos(slab,n_sites)
     #generates combinations of sites
     site_lst, dict_ads_site = generate_site_lst(slab)
@@ -88,7 +91,9 @@ def save_site_combos(slab, adsorbate, path, n_sites, dist_reduce=2.1):
         neg_idx = idx * (-1)
         idx_lst.append(neg_idx)
     #a list of the indices for adsorbates used for calculating distance between adsorbates
+    coord_combos = []
     for combo in site_combos:
+        combo_dict = {}
         dirname_lst = []
         init_slab = slab.copy()
         selected_sites = []
@@ -100,27 +105,81 @@ def save_site_combos(slab, adsorbate, path, n_sites, dist_reduce=2.1):
             site = dict_ads_site[site_type][site_id]
             init_slab.append('H', site, coords_are_cartesian=True)
             selected_sites.append(site)
-            #stores a list of sites for a combination and appends hydrogen
-            #in those sites to perform distance measurements between the sites
+            #stores a list of sites and appends hydrogen in those sites to perform distance measurements between the sites
         dirname = '_'.join(dirname_lst)
+        combo_dict[dirname] = selected_sites
         dist_lst = []
         for idx_combo in itertools.combinations(idx_lst,2):
             dist = init_slab.get_distance(idx_combo[0], idx_combo[1])
             dist_lst.append(dist)
-            #measures the distance between the sites stored above
+            #measures the distance between the sites
         if (n_sites == 1) or (dist_reduce < min(dist_lst)):
-            fin_slab = slab.copy()
-            for site in selected_sites:
-                sf = AdsorbateSiteFinder(fin_slab)
-                fin_slab = sf.add_adsorbate(adsorbate,site)
-                fin_slab = fin_slab.get_sorted_structure()
-                #appends the specified adsorbate to the slab in the selected 
-                #sites if the distance between the sites is more than a 
-                #specified number of angstroms
-            if not os.path.exists(os.getcwd() + '\\Mo2C\\orthorhombic\\example_slab\\adsorbates\\%s%s'  %(path, dirname)):
-                os.makedirs(os.getcwd() + '\\Mo2C\\orthorhombic\\example_slab\\adsorbates\\%s%s' %(path, dirname))
-            fin_slab.to('poscar',os.getcwd() + '\\Mo2C\\orthorhombic\\example_slab\\adsorbates\\%s%s\\POSCAR' %(path, dirname))
-            #stores the generated slabs with adsorbates in a local directory
+            coord_combos.append(combo_dict)
+    return coord_combos
+
+def save_site_combos(slab, adsorbate, path, n_sites, dist_reduce=2.1, symm_reduce=True):
+    coord_combos = create_coord_combos(slab, n_sites, dist_reduce=dist_reduce)
+    if symm_reduce:
+        coord_combos = combo_symm_reduce(slab,coord_combos)
+    for combo in coord_combos:
+        fin_slab = slab.copy()
+        sites = list(combo.values())[0]
+        dirname = list(combo.keys())[0]
+        #sf = AdsorbateSiteFinder(fin_slab)
+        for site in sites:
+            sf = AdsorbateSiteFinder(fin_slab)
+            fin_slab = sf.add_adsorbate(adsorbate,site)
+        fin_slab = fin_slab.get_sorted_structure()
+        #appends the specified adsorbate to the slab in the selected sites if the distance between the sites is more than a specified number of angstroms
+            
+        if not os.path.exists('C:\\Users\\mjankous\\Documents\\VASP_files\\%s%s'  %(path, dirname)):
+            os.makedirs('C:\\Users\\mjankous\\Documents\\VASP_files\\%s%s' %(path, dirname))
+        fin_slab.to('poscar','C:\\Users\\mjankous\\Documents\\VASP_files\\%s%s\\POSCAR'%(path, dirname))
+        #stores the generated slabs with adsorbates in a local directory
+
+def combo_symm_reduce(slab, coord_combos):
+    surf_sg = SpacegroupAnalyzer(slab, 0.1)
+    symm_ops = surf_sg.get_symmetry_operations()
+    #get symmetry operations for the spacegroup of our slab
+    test = []
+    for coord in list(coord_combos[0].values())[0]:
+        test.append(np.array([1,1,1]))
+    unique_combos = [{'test_case':test}]
+    #create a generic first combination of coordinates based on the number of 
+    #coordinates in the combination submitted. necessary to initialize the search, 
+    #but this set should never be matched and is removed at the end of the cycle
+    for combo in coord_combos:
+        coords = list(combo.values())[0]
+        coords = [slab.lattice.get_fractional_coords(coord) for coord in coords]
+        #converts coordinates to fractional form
+        for u_combo in unique_combos:
+            match = False
+            u_coords = list(u_combo.values())[0]
+            u_coords = [slab.lattice.get_fractional_coords(u_coord) for u_coord in u_coords]
+            #converts unique coordinates in memory to fractional form
+            for op in symm_ops:
+                coord_match = []
+                #iterates through symmetry operations
+                for coord in coords:
+                    incoord = False
+                    if mg.util.coord.in_coord_list_pbc(u_coords, op.operate(coord), atol=1e-6):
+                            #tests if the coordinate is in the combination of unique coordinates
+                            incoord = True
+                    coord_match.append(incoord)
+                if all(coord_match):
+                    #if all of the coordinates in a combination are already in the memory, 
+                    #breaks the loop so that the repeated combination is not 
+                    #added to the set of the unique coordinate combinations
+                    #print('suggests %s is symmetrically equivalent to %s' %(combo.keys(), u_combo.keys()))
+                    match = True
+                    break
+            if match:
+                break
+        if not match:
+            unique_combos.append(combo)
+    unique_combos.pop(0)
+                
+    return unique_combos
 
 
 def halfMLproximity(slab):
@@ -142,7 +201,7 @@ def halfMLproximity(slab):
             site_id2 = int(sitename_splt2[1]) - 1
             site1 = dict_ads_site[site_type1][site_id1]
             site2 = dict_ads_site[site_type2][site_id2]
-            slab = Poscar.from_file(os.getcwd() + "\\Mo2C\\orthorhombic\\example_slab\\POSCAR").structure
+            slab = Poscar.from_file("C:\\Users\mjankous\Documents\VASP_files\Mo2C\\orthorhombic\\ex_slab\\POSCAR").structure
             slab.append('H',site1,coords_are_cartesian=True,properties={'selective_dynamics':[True, True, True]})
             slab.append('H',site2,coords_are_cartesian=True,properties={'selective_dynamics':[True, True, True]})
             if radius[0] <= slab.get_distance(len(slab) - 2, len(slab) - 1) <= radius[1]:
@@ -177,7 +236,7 @@ def threequarterMLproximity(slab):
             site1 = dict_ads_site[site_type1][site_id1]
             site2 = dict_ads_site[site_type2][site_id2]
             site3 = dict_ads_site[site_type3][site_id3]
-            slab = Poscar.from_file(os.getcwd() + "\\Mo2C\\orthorhombic\\ex_slab\\POSCAR").structure
+            slab = Poscar.from_file("C:\\Users\mjankous\Documents\VASP_files\Mo2C\\orthorhombic\\ex_slab\\POSCAR").structure
             slab.append('H',site1,coords_are_cartesian=True,properties={'selective_dynamics':[True, True, True]})
             slab.append('H',site2,coords_are_cartesian=True,properties={'selective_dynamics':[True, True, True]})
             slab.append('H',site3,coords_are_cartesian=True,properties={'selective_dynamics':[True, True, True]})
@@ -217,7 +276,7 @@ def MLproximity(slab):
             site2 = ads_sites[site_type2][site_id2]
             site3 = ads_sites[site_type3][site_id3]
             site4 = ads_sites[site_type4][site_id4]
-            slab = Poscar.from_file(os.getcwd() + "\VASP_files\Mo2C\\orthorhombic\\ex_slab\\POSCAR").structure
+            slab = Poscar.from_file("C:\\Users\mjankous\Documents\VASP_files\Mo2C\\orthorhombic\\ex_slab\\POSCAR").structure
             slab.append('H',site1,coords_are_cartesian=True,properties={'selective_dynamics':[True, True, True]})
             slab.append('H',site2,coords_are_cartesian=True,properties={'selective_dynamics':[True, True, True]})
             slab.append('H',site3,coords_are_cartesian=True,properties={'selective_dynamics':[True, True, True]})
@@ -233,6 +292,61 @@ def MLproximity(slab):
         prox_dict[str(radius)] = case_lst
     return prox_dict
 
-
-
-
+#def struc_to_graph(slab):
+#    G = nx.Graph()
+#    i = 0
+#    for atom in slab:
+#        i += 1
+#        G.add_node(i, coords=atom.coords, species=atom.species_string)
+#    G = NNedges(G)
+#    return G
+#
+#def NNedges(G):
+#    for nodei in G.nodes.data():
+#            NN_dist = 100
+#            NN_lst = []
+#            for nodej in G.nodes.data():
+#                if nodei != nodej:
+#                    dist = distance.euclidean(nodei[1]['coords'],nodej[1]['coords'])
+#                    if abs(dist - NN_dist) < 0.5:
+#                        NN_lst.append(nodej[0])
+#                    elif dist < NN_dist:
+#                        NN_lst = [nodej[0]]
+#                        NN_dist = dist
+#            for node in NN_lst:
+#                G.add_edge(nodei[0], node)
+#    return G
+#
+#def periodic_isomorph(slab, ads_set1, ads_set2):
+#    G = nx.Graph()
+#    superslab = slab.copy()
+#    superslab.make_supercell([2,2,1])
+#    sf = AdsorbateSiteFinder(superslab)
+#    surf_sites = sf.find_surface_sites_by_height(superslab,height=0.9)
+#    i = 0
+#    for site in superslab:
+#        if site in surf_sites:
+#            i += 1
+#            G.add_node(i, coords=site.coords, species=site.species_string)
+#    G1 = G.copy()
+#    j=0
+#    for adsorbate in ads_set1:
+#        j += 1
+#        G1.add_node('ads' + str(j), coords=adsorbate)
+#    G2 = G.copy()
+#    j=0
+#    for adsorbate in ads_set2:
+#        j += 1
+#        G2.add_node('ads' + str(j), coords=adsorbate)
+#    G1 = NNedges(G1)
+#    G2 = NNedges(G2)
+#    iso = nx.algorithms.isomorphism.is_isomorphic(G1,G2)
+#    return iso, G1, G2
+#    
+#        
+#def test_isomorph(slab1, slab2):
+#    G1 = struc_to_graph(slab1)
+#    G2 = struc_to_graph(slab2)
+#    iso = nx.algorithms.isomorphism.is_isomorphic(G1,G2)
+#    return iso
+#
