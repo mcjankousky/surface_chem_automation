@@ -13,6 +13,7 @@ from pymatgen.analysis.adsorption import AdsorbateSiteFinder
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 import itertools
 import os
+import pandas as pd
 #import networkx as nx
 #import json
 from scipy.spatial import distance
@@ -80,8 +81,30 @@ def make_site_combos(slab,n_sites):
         site_combos.append(combo)
     return site_combos
 
+def determine_coverage(slab, coverage, ref_species=None):
+    sf = AdsorbateSiteFinder(slab)
+    surf_sites = sf.find_surface_sites_by_height(slab)
+    if ref_species == None:
+        n_surf_atoms = len(surf_sites)
+    else:
+        n_surf_atoms = 0
+        for site in surf_sites:
+            if site.species_string == ref_species:
+                n_surf_atoms += 1
+    n_sites_init = n_surf_atoms*coverage
+    
+    n_sites = np.ceil(n_sites_init)
+    
+    if n_sites != n_sites_init:
+        actual_coverage = n_sites/n_surf_atoms
+        print('Warning: the number of sites used does not exactly match the specified coverage, the actual coverage is %s' %actual_coverage)
+    
+    return n_sites
+    
 
-def create_coord_combos(slab, n_sites, dist_reduce=2.1):
+def create_coord_combos(slab, coverage, ref_species=None, dist_reduce=2.1):
+    
+    n_sites = determine_coverage(slab, coverage, ref_species=ref_species)
     site_combos = make_site_combos(slab,n_sites)
     #generates combinations of sites
     site_lst, dict_ads_site = generate_site_lst(slab)
@@ -117,8 +140,8 @@ def create_coord_combos(slab, n_sites, dist_reduce=2.1):
             coord_combos.append(combo_dict)
     return coord_combos
 
-def save_site_combos(slab, adsorbate, path, n_sites, dist_reduce=2.1, symm_reduce=True):
-    coord_combos = create_coord_combos(slab, n_sites, dist_reduce=dist_reduce)
+def save_site_combos(slab, adsorbate, path, coverage, ref_species=None, dist_reduce=2.1, symm_reduce=False):
+    coord_combos = create_coord_combos(slab, coverage, ref_species=ref_species, dist_reduce=dist_reduce)
     if symm_reduce:
         coord_combos = combo_symm_reduce(slab,coord_combos)
     for combo in coord_combos:
@@ -148,6 +171,8 @@ def combo_symm_reduce(slab, coord_combos):
     #create a generic first combination of coordinates based on the number of 
     #coordinates in the combination submitted. necessary to initialize the search, 
     #but this set should never be matched and is removed at the end of the cycle
+    u_combos_lst = []
+    duplicate_lst = []
     for combo in coord_combos:
         coords = list(combo.values())[0]
         coords = [slab.lattice.get_fractional_coords(coord) for coord in coords]
@@ -170,7 +195,9 @@ def combo_symm_reduce(slab, coord_combos):
                     #if all of the coordinates in a combination are already in the memory, 
                     #breaks the loop so that the repeated combination is not 
                     #added to the set of the unique coordinate combinations
-                    #print('suggests %s is symmetrically equivalent to %s' %(combo.keys(), u_combo.keys()))
+                    #print('suggests %s is symmetrically equivalent to %s' %(list(combo.keys())[0], list(u_combo.keys()))[0])
+                    u_combos_lst.append(list(u_combo.keys())[0])
+                    duplicate_lst.append(list(combo.keys())[0])
                     match = True
                     break
             if match:
@@ -178,9 +205,24 @@ def combo_symm_reduce(slab, coord_combos):
         if not match:
             unique_combos.append(combo)
     unique_combos.pop(0)
+    combo_pairs = {'combo_pairs1':u_combos_lst, 'combo_pairs2':duplicate_lst}
+    pair_df = pd.DataFrame.from_dict(combo_pairs)
+    pair_df.to_csv(path_or_buf=os.getcwd()+'\\75ML_eq_pairs.csv')
+    
                 
-    return unique_combos
+    return unique_combos, pair_df
 
+def pair_compare(row, df):
+    config1 = row['combo_pairs1']
+    config2 = row['combo_pairs2']
+    e1 = float(df['E'].get((df.site == './adsorbates/CO/clean/75ML_Cdown/' + config1)))
+    e2 = float(df['E'].get((df.site == './adsorbates/CO/clean/75ML_Cdown/' + config2)))
+    if abs(e1-e2) < 0.1:
+        close_test = True
+    else:
+        close_test = False
+    return e2
+#    row['close'] = close_test
 
 def halfMLproximity(slab):
     prox_dict = {}
