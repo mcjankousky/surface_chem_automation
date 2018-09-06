@@ -93,11 +93,12 @@ def determine_coverage(slab, coverage, ref_species=None):
                 n_surf_atoms += 1
     n_sites_init = n_surf_atoms*coverage
     
-    n_sites = np.ceil(n_sites_init)
+    n_sites = np.round(n_sites_init)
     
     if n_sites != n_sites_init:
         actual_coverage = n_sites/n_surf_atoms
         print('Warning: the number of sites used does not exactly match the specified coverage, the actual coverage is %s' %actual_coverage)
+    n_sites = int(n_sites)
     
     return n_sites
     
