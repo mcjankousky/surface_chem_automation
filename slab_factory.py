@@ -26,9 +26,9 @@ slab to help the calculations run more quickly.
 Finally, it also includes a framework to save all of the generated surfaces.
 """
 
-mat_path='\\Mo2C\\orthorhombic'
-
-struc = Poscar.from_file(os.getcwd() + '%s\\bulk\\CONTCAR' %mat_path).structure
+#mat_path='\\Mo2C\\orthorhombic'
+#
+#struc = Poscar.from_file(os.getcwd() + '%s\\bulk\\CONTCAR' %mat_path).structure
 
 #miller = [0,0,1]
 
@@ -44,35 +44,38 @@ def freeze_center(slab):
     slab.add_site_property('selective_dynamics',sd_lst)
             
     return slab
+
+def get_all_slabs(unit_cell, max_miller_ind, slab_thickness, surf_supercell, run_dir):
+    slab_memory = []
+                
+    miller_lst = get_symmetrically_distinct_miller_indices(unit_cell, max_miller_ind)
+    for miller in miller_lst:
+        for n_angstroms in range(slab_thickness-3, slab_thickness+3):
+            slabgen = SlabGenerator(unit_cell,miller,n_angstroms,15, in_unit_planes=False, lll_reduce=True)
+    
+            slabs = slabgen.get_slabs(symmetrize='equivalent_surface')
+    
+            slab_lst = []
+    
+            for slab in slabs:
+                    make_term = slab.make_single_species_termination()
+                    slab_lst.append(slab)
+                    if type(make_term) == list:
+                        slab_lst.extend(make_term)
             
-slab_memory = []
-            
-miller_lst = get_symmetrically_distinct_miller_indices(struc,1)
-for miller in miller_lst:
-    for n_angstroms in range(22, 28):
-        slabgen = SlabGenerator(struc,miller,n_angstroms,15, in_unit_planes=False, lll_reduce=False)
-
-        slabs = slabgen.get_slabs(symmetrize='equivalent_surface')
-
-        slab_lst = []
-
-        for slab in slabs:
-                make_term = slab.make_single_species_termination()
-                slab_lst.append(slab)
-                if type(make_term) == list:
-                    slab_lst.extend(make_term)
-        
-        i = 0
-
-        for slab in slab_lst:
-            new_slab = slab.copy()
-            new_slab = freeze_center(new_slab)
-            new_slab.get_sorted_structure()
-            if new_slab in slab_memory:
-                pass
-            else:                
-                i += 1
-                if not os.path.exists(os.getcwd() + '%s\surface_termination\%s%s%s\%s\%sangstroms' %(mat_path,miller[0],miller[1],miller[2],i,n_angstroms)):
-                    os.makedirs(os.getcwd() + '%s\surface_termination\%s%s%s\%s\%sangstroms' %(mat_path,miller[0],miller[1],miller[2],i,n_angstroms))
-                new_slab.to('poscar',os.getcwd() + '%s\surface_termination\%s%s%s\%s\%sangstroms\\POSCAR' %(mat_path,miller[0],miller[1],miller[2],i,n_angstroms))
-            slab_memory.append(new_slab)
+            slab_idx = 0
+    
+            for slab in slab_lst:
+                new_slab = slab.copy()
+                new_slab = freeze_center(new_slab)
+                new_slab.make_supercell([surf_supercell[0],surf_supercell[1],1])
+                new_slab = new_slab.get_sorted_structure()
+                if new_slab in slab_memory:
+                    pass
+                else:                
+                    slab_idx += 1
+                    if not os.path.exists('%s\surface_stability\%s%s%s\%s\%sangstroms' %(run_dir,miller[0],miller[1],miller[2],slab_idx,n_angstroms)):
+                        os.makedirs('%s\surface_stability\%s%s%s\%s\%sangstroms' %(run_dir,miller[0],miller[1],miller[2],slab_idx,n_angstroms))
+                    new_slab.to('poscar','%s\surface_stability\%s%s%s\%s\%sangstroms\\POSCAR' %(run_dir,miller[0],miller[1],miller[2],slab_idx,n_angstroms))
+                    slab_memory.append(new_slab)
+    return slab_memory

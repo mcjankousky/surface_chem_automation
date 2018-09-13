@@ -20,7 +20,7 @@ struc = Poscar.from_file(run_dir + 'POSCAR').structure
 # the integer conversion here. I doubt this is a big deal. We may want to consider using
 # in_unit_planes=True so that we do things in terms of numbers of layers, which I think
 # may be more intuitive to users. 
-slab_list = slab_factory.get_all_slabs(struc,args.max_miller_ind,int(args.slab_thickness),run_dir)
+slab_list = slab_factory.get_all_slabs(struc,args.max_miller_ind,int(args.slab_thickness),args.surf_supercell,run_dir)
 
 move_files_in.move_files_in(run_dir,'surface_stability')
 
