@@ -18,11 +18,11 @@ for root, dirs, files in os.walk(my_path):
 #    root_kpts = k.read()
     for name in dirs:
         output_path = os.path.join(root, name)
-    if os.path.exists(output_path + '/POSCAR~'):
-        with open(output_path + '/POSCAR~','r') as f:
-            orig_poscar = f.read()
-        with open(output_path + '/POSCAR','w') as g:
-            g.write(orig_poscar)
+        if os.path.exists(output_path + '/POSCAR~'):
+            with open(output_path + '/POSCAR~','r') as f:
+                orig_poscar = f.read()
+            with open(output_path + '/POSCAR','w') as g:
+                g.write(orig_poscar)
 
 #    if os.path.exists(paff + '/INCAR'):
 #        os.rename(paff + '/INCAR', paff + '/old_INCAR')
@@ -41,19 +41,19 @@ for root, dirs, files in os.walk(my_path):
 #        with open(paff + '/INCAR','w') as g:
 #            g.write(new_incar)
             
-    if os.path.exists(output_path + '/POSCAR'):
+        if os.path.exists(output_path + '/POSCAR'):
 #        with open(paff + '/POTCAR','w') as pot_to_write:
 #            pot_to_write.write(root_potcar)
 #        with open(paff + '/INCAR','w') as in_to_write:
 #            in_to_write.write(root_incar)
 #        with open(paff + '/KPOINTS','w') as kpts_to_write:
 #            kpts_to_write.write(root_kpts)
-        jobname_lst = output_path.split('/')
-        jobname = '_'.join(jobname_lst[6:])
-        jobname += '.log'
-        print(jobname)
-        os.chdir(output_path)
+            jobname_lst = output_path.split('/')
+            jobname = '_'.join(jobname_lst[6:])
+            jobname += '.log'
+            print(jobname)
+            os.chdir(output_path)
 #        print(os.getcwd())
-        subprocess.Popen(['qbio_e', '1', '24', '24', 'batch', jobname])
+            subprocess.Popen(['qbio_e', '1', '24', '24', 'batch', jobname])
 #qbio_e is my personal submission script, 1 refers to number of nodes, first 24 is number of cores, second 24 is number of hours, batch is the queue
-        sleep(2)
+            sleep(2)

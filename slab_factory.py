@@ -19,9 +19,7 @@ symmetry and "make_single_species_termination" method to try to enumerate those
 surfaces previously missed by pymatgen
 Second, it makes the slabs with varying thicknesses so that convergence of 
 surface energies with respect to layers can be tested. 
-Third, it makes surfaces as 2x2x1 supercells by default, as carrie suggested the 
-extra room might give us better convergence as the surfaces relax
-Fourth, it freezes all of the atoms more than 5 angstroms from the surface of the 
+Third, it freezes all of the atoms more than 5 angstroms from the surface of the 
 slab to help the calculations run more quickly.
 Finally, it also includes a framework to save all of the generated surfaces.
 """
@@ -45,13 +43,18 @@ def freeze_center(slab):
             
     return slab
 
-def get_all_slabs(unit_cell, max_miller_ind, slab_thickness, surf_supercell, run_dir):
+def get_all_slabs(unit_cell, max_miller_ind, slab_thickness, surf_supercell, run_dir, in_unit_planes=False):
     slab_memory = []
-                
+    if not in_unit_planes:
+        slab_range = range(slab_thickness-3, slab_thickness+3)
+        layer_units = 'angstroms'
+    else:
+        slab_range = range(slab_thickness-1,slab_thickness+1)
+        layer_units = 'layers'
     miller_lst = get_symmetrically_distinct_miller_indices(unit_cell, max_miller_ind)
     for miller in miller_lst:
-        for n_angstroms in range(slab_thickness-3, slab_thickness+3):
-            slabgen = SlabGenerator(unit_cell,miller,n_angstroms,15, in_unit_planes=False, lll_reduce=True)
+        for n_angstroms in slab_range:
+            slabgen = SlabGenerator(unit_cell,miller,n_angstroms,15, in_unit_planes=in_unit_planes, lll_reduce=True)
     
             slabs = slabgen.get_slabs(symmetrize='equivalent_surface')
     
@@ -74,8 +77,11 @@ def get_all_slabs(unit_cell, max_miller_ind, slab_thickness, surf_supercell, run
                     pass
                 else:                
                     slab_idx += 1
-                    if not os.path.exists('%s\surface_stability\%s%s%s\%s\%sangstroms' %(run_dir,miller[0],miller[1],miller[2],slab_idx,n_angstroms)):
-                        os.makedirs('%s\surface_stability\%s%s%s\%s\%sangstroms' %(run_dir,miller[0],miller[1],miller[2],slab_idx,n_angstroms))
-                    new_slab.to('poscar','%s\surface_stability\%s%s%s\%s\%sangstroms\\POSCAR' %(run_dir,miller[0],miller[1],miller[2],slab_idx,n_angstroms))
+                    if not os.path.exists('%s\surface_stability\%s%s%s\%s\%s%s' %(run_dir,miller[0],miller[1],miller[2],slab_idx,n_angstroms,layer_units)):
+                        os.makedirs('%s\surface_stability\%s%s%s\%s\%s%s' %(run_dir,miller[0],miller[1],miller[2],slab_idx,n_angstroms,layer_units))
+                    new_slab.to('poscar','%s\surface_stability\%s%s%s\%s\%s%s\\POSCAR' %(run_dir,miller[0],miller[1],miller[2],slab_idx,n_angstroms,layer_units))
                     slab_memory.append(new_slab)
+    if not os.path.exists('%s/surface_stability/bulk_reference' %run_dir):
+        os.makedirs('%s/surface_stability/bulk_reference' %run_dir)
+    unit_cell.to("poscar",'%s/surface_stability/bulk_reference/POSCAR' %run_dir)
     return slab_memory

@@ -24,16 +24,18 @@ varying coverage conditions from a root slab that has been generated elsewhere
 """
 
 
-slab = Poscar.from_file("C:\\Users\mjankous\Documents\VASP_files\Mo2C\\orthorhombic\\ex_slab\\POSCAR").structure
+#slab = Poscar.from_file("C:\\Users\mjankous\Documents\VASP_files\Mo2C\\orthorhombic\\ex_slab\\POSCAR").structure
 #a choice of root slab that I have been using to test out the framework below
 
 
 
-def generate_site_lst(slab):
+def generate_site_lst(slab, height=0.9):
     sf = AdsorbateSiteFinder(slab)
     #creates an AdsorbateSiteFinder object from pymatgen.analysis.adsorption 
     #to identify the possible sites for adsorbates    
     
+    slab_corrected_surf = sf.assign_site_properties(slab, height=height)
+    sf = AdsorbateSiteFinder(slab_corrected_surf)
     dict_ads_site = sf.find_adsorption_sites(distance=1.7, symm_reduce=None)
     #a dictionary with all possible adsorption sites on the surface
     
@@ -72,18 +74,18 @@ def make_H():
     mol = mg.core.structure.Molecule(['H'],[np.array([0,0,0])])
     return mol
 
-def make_site_combos(slab,n_sites):
+def make_site_combos(slab,n_sites, height=0.9):
     #takes all of the possible adsorption site labels and makes all possible
     #combinations of a number n_sites of the sites with no repetition
-    site_lst, dict_ads_site= generate_site_lst(slab)
+    site_lst, dict_ads_site= generate_site_lst(slab, height=height)
     site_combos = []
     for combo in itertools.combinations(site_lst,n_sites):
         site_combos.append(combo)
     return site_combos
 
-def determine_coverage(slab, coverage, ref_species=None):
+def determine_coverage(slab, coverage, ref_species=None, height=2.1):
     sf = AdsorbateSiteFinder(slab)
-    surf_sites = sf.find_surface_sites_by_height(slab)
+    surf_sites = sf.find_surface_sites_by_height(slab, height=height)
     if ref_species == None:
         n_surf_atoms = len(surf_sites)
     else:
@@ -98,17 +100,19 @@ def determine_coverage(slab, coverage, ref_species=None):
     if n_sites != n_sites_init:
         actual_coverage = n_sites/n_surf_atoms
         print('Warning: the number of sites used does not exactly match the specified coverage, the actual coverage is %s' %actual_coverage)
+    else:
+        actual_coverage = coverage
     n_sites = int(n_sites)
     
-    return n_sites
+    return n_sites, actual_coverage
     
 
-def create_coord_combos(slab, coverage, ref_species=None, dist_reduce=2.1):
+def create_coord_combos(slab, coverage, ref_species=None, height=0.9, dist_reduce=2.1):
     
-    n_sites = determine_coverage(slab, coverage, ref_species=ref_species)
+    n_sites, actual_coverage = determine_coverage(slab, coverage, ref_species=ref_species, height=height)
     site_combos = make_site_combos(slab,n_sites)
     #generates combinations of sites
-    site_lst, dict_ads_site = generate_site_lst(slab)
+    site_lst, dict_ads_site = generate_site_lst(slab, height=height)
     #generates individual sites
     idx_lst = []
     for idx in range(1, n_sites+1):
@@ -130,7 +134,7 @@ def create_coord_combos(slab, coverage, ref_species=None, dist_reduce=2.1):
             init_slab.append('H', site, coords_are_cartesian=True)
             selected_sites.append(site)
             #stores a list of sites and appends hydrogen in those sites to perform distance measurements between the sites
-        dirname = '_'.join(dirname_lst)
+        dirname = str(actual_coverage*100) + 'ML/' + '_'.join(dirname_lst)
         combo_dict[dirname] = selected_sites
         dist_lst = []
         for idx_combo in itertools.combinations(idx_lst,2):
@@ -141,8 +145,9 @@ def create_coord_combos(slab, coverage, ref_species=None, dist_reduce=2.1):
             coord_combos.append(combo_dict)
     return coord_combos
 
-def save_site_combos(slab, adsorbate, path, coverage, ref_species=None, dist_reduce=2.1, symm_reduce=False):
-    coord_combos = create_coord_combos(slab, coverage, ref_species=ref_species, dist_reduce=dist_reduce)
+def save_site_combos(slab, adsorbate, path, coverage, height=0.9,
+                     dist_reduce=2.1, symm_reduce=False, ref_species=None):
+    coord_combos = create_coord_combos(slab, coverage, ref_species=ref_species, height=height, dist_reduce=dist_reduce)
     if symm_reduce:
         coord_combos = combo_symm_reduce(slab,coord_combos)
     for combo in coord_combos:
@@ -156,9 +161,9 @@ def save_site_combos(slab, adsorbate, path, coverage, ref_species=None, dist_red
         fin_slab = fin_slab.get_sorted_structure()
         #appends the specified adsorbate to the slab in the selected sites if the distance between the sites is more than a specified number of angstroms
             
-        if not os.path.exists('C:\\Users\\mjankous\\Documents\\VASP_files\\%s%s'  %(path, dirname)):
-            os.makedirs('C:\\Users\\mjankous\\Documents\\VASP_files\\%s%s' %(path, dirname))
-        fin_slab.to('poscar','C:\\Users\\mjankous\\Documents\\VASP_files\\%s%s\\POSCAR'%(path, dirname))
+        if not os.path.exists('%s\\%s'  %(path, dirname)):
+            os.makedirs('%s\\%s' %(path, dirname))
+        fin_slab.to('poscar','%s\\%s\\POSCAR'%(path, dirname))
         #stores the generated slabs with adsorbates in a local directory
 
 def combo_symm_reduce(slab, coord_combos):
@@ -197,8 +202,8 @@ def combo_symm_reduce(slab, coord_combos):
                     #breaks the loop so that the repeated combination is not 
                     #added to the set of the unique coordinate combinations
                     #print('suggests %s is symmetrically equivalent to %s' %(list(combo.keys())[0], list(u_combo.keys()))[0])
-                    u_combos_lst.append(list(u_combo.keys())[0])
-                    duplicate_lst.append(list(combo.keys())[0])
+#                    u_combos_lst.append(list(u_combo.keys())[0])
+#                    duplicate_lst.append(list(combo.keys())[0])
                     match = True
                     break
             if match:
@@ -206,12 +211,12 @@ def combo_symm_reduce(slab, coord_combos):
         if not match:
             unique_combos.append(combo)
     unique_combos.pop(0)
-    combo_pairs = {'combo_pairs1':u_combos_lst, 'combo_pairs2':duplicate_lst}
-    pair_df = pd.DataFrame.from_dict(combo_pairs)
-    pair_df.to_csv(path_or_buf=os.getcwd()+'\\75ML_eq_pairs.csv')
+#    combo_pairs = {'combo_pairs1':u_combos_lst, 'combo_pairs2':duplicate_lst}
+#    pair_df = pd.DataFrame.from_dict(combo_pairs)
+#    pair_df.to_csv(path_or_buf=os.getcwd()+'\\75ML_eq_pairs.csv')
     
                 
-    return unique_combos, pair_df
+    return unique_combos #, pair_df
 
 def pair_compare(row, df):
     config1 = row['combo_pairs1']

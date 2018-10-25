@@ -8,6 +8,7 @@ parser = argparse.ArgumentParser(description='This routine generates all possibl
 parser.add_argument('max_miller_ind',type=int,help='maximum miller index for surface terminations')
 parser.add_argument('slab_thickness',type=float,
                     help='thickness of slab to generate in angstrom. Slabs within +-3 angstrom of this thickness will be considered')  # DVF: could add tolerance as an optional variable
+parser.add_argument('--in_unit_planes',type=bool,default=False,dest='in_unit_planes',help='Whether to use unit planes instead of angstroms to describe slab thickness, defaults to False')
 parser.add_argument('--surface_supercell', dest='surf_supercell',type=int, default=[1,1], nargs=2,metavar=('nss1', 'nss2'),help='surface supercell dimensions in each surface lattice direction. Defaults to 1.')
 parser.add_argument('--run_directory', dest='run_dir',default='./',help='Location in which to run this script.')
 args = parser.parse_args()
@@ -20,7 +21,7 @@ struc = Poscar.from_file(run_dir + 'POSCAR').structure
 # the integer conversion here. I doubt this is a big deal. We may want to consider using
 # in_unit_planes=True so that we do things in terms of numbers of layers, which I think
 # may be more intuitive to users. 
-slab_list = slab_factory.get_all_slabs(struc,args.max_miller_ind,int(args.slab_thickness),args.surf_supercell,run_dir)
+slab_list = slab_factory.get_all_slabs(struc,args.max_miller_ind,int(args.slab_thickness),args.surf_supercell,run_dir,in_unit_planes=args.in_unit_planes)
 
 move_files_in.move_files_in(run_dir,'surface_stability')
 
