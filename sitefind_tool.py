@@ -11,6 +11,7 @@ from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.core.surface import SlabGenerator
 from pymatgen.analysis.adsorption import AdsorbateSiteFinder
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.core.structure import Molecule
 import itertools
 import os
 import pandas as pd
@@ -36,7 +37,7 @@ def generate_site_lst(slab, height=0.9):
     
     slab_corrected_surf = sf.assign_site_properties(slab, height=height)
     sf = AdsorbateSiteFinder(slab_corrected_surf)
-    dict_ads_site = sf.find_adsorption_sites(distance=1.7, symm_reduce=None)
+    dict_ads_site = sf.find_adsorption_sites(distance=1.7, symm_reduce=False)
     #a dictionary with all possible adsorption sites on the surface
     
     site_lst = []
@@ -44,6 +45,7 @@ def generate_site_lst(slab, height=0.9):
     for site_type in dict_ads_site.keys():
         i = 0
         if site_type != 'all':
+#            if site_type != 'bridge':
             for site in dict_ads_site[site_type]:
                 i += 1
                 site_name = site_type + '_' + str(i)
@@ -55,15 +57,15 @@ def make_CO(cdown=True):
     #Creates a carbon monoxide molecule to adsorb to the surface. 
     #Always oriented normal to the surface, if cdown is True the C atom is closer to the surface
     if cdown == True:
-        mol = mg.core.structure.Molecule(['C','O'],[np.array([0, 0, 0]),np.array([0, 0, 1.13])])
+        mol = Molecule(['C','O'],[np.array([0, 0, 0]),np.array([0, 0, 1.13])])
     else:
-        mol = mg.core.structure.Molecule(['O','C'],[np.array([0, 0, 0]), np.array([0, 0, 1.13])])
+        mol = Molecule(['O','C'],[np.array([0, 0, 0]), np.array([0, 0, 1.13])])
     return mol    
     
 def make_NH3():
     #creates an ammonia molecule to adsorb to the surface
     #only one orientation, because I've mostly only seen this configuration for NH3 on surfaces
-    mol = mg.core.structure.Molecule(['N','H','H','H'], [np.array([0, 0, 0]),
+    mol = Molecule(['N','H','H','H'], [np.array([0, 0, 0]),
                                                          np.array([-0.8248, -0.4762, 0.336]),
                                                          np.array([0.8248, -0.4762, 0.336]),
                                                          np.array([0, 0.9524, 0.336])])
@@ -71,7 +73,17 @@ def make_NH3():
 
 def make_H():
     #creates an hydrogen atom to adsorb to the surface
-    mol = mg.core.structure.Molecule(['H'],[np.array([0,0,0])])
+    mol = Molecule(['H'],[np.array([0,0,0])])
+    return mol
+
+def make_O():
+    #creates an oxygen atom to adsorb to the surface
+    mol = Molecule(['O'],[np.array([0,0,0])])
+    return mol
+
+def make_C():
+    #creates an oxygen atom to adsorb to the surface
+    mol = Molecule(['C'],[np.array([0,0,0])])
     return mol
 
 def make_site_combos(slab,n_sites, height=0.9):
@@ -93,6 +105,7 @@ def determine_coverage(slab, coverage, ref_species=None, height=2.1):
         for site in surf_sites:
             if site.species_string == ref_species:
                 n_surf_atoms += 1
+#    print(n_surf_atoms)
     n_sites_init = n_surf_atoms*coverage
     
     n_sites = np.round(n_sites_init)
@@ -110,11 +123,19 @@ def determine_coverage(slab, coverage, ref_species=None, height=2.1):
 def create_coord_combos(slab, coverage, ref_species=None, height=0.9, dist_reduce=2.1):
     
     n_sites, actual_coverage = determine_coverage(slab, coverage, ref_species=ref_species, height=height)
-    site_combos = make_site_combos(slab,n_sites)
+    site_combos = make_site_combos(slab,n_sites,height=height)
     #generates combinations of sites
     site_lst, dict_ads_site = generate_site_lst(slab, height=height)
     #generates individual sites
     idx_lst = []
+    latt = slab.lattice.matrix
+    #print(latt)
+    ngh_latt_2d = [np.array([0,0,0]),np.array([1,0,0]),np.array([0,1,0]),
+                       np.array([-1,0,0]), np.array([0,-1,0]),np.array([1,1,0]),
+                       np.array([-1,1,0]), np.array([1,-1,0]),np.array([1,1,0])]
+    ngh_latt_2d_metric = []
+    for latt_vec in ngh_latt_2d:
+        ngh_latt_2d_metric.append(latt_vec@latt)
     for idx in range(1, n_sites+1):
         neg_idx = idx * (-1)
         idx_lst.append(neg_idx)
@@ -134,22 +155,26 @@ def create_coord_combos(slab, coverage, ref_species=None, height=0.9, dist_reduc
             init_slab.append('H', site, coords_are_cartesian=True)
             selected_sites.append(site)
             #stores a list of sites and appends hydrogen in those sites to perform distance measurements between the sites
-        dirname = str(actual_coverage*100) + 'ML/' + '_'.join(dirname_lst)
+        dirname = str(int(actual_coverage*100)) + 'ML/' + '_'.join(dirname_lst)
         combo_dict[dirname] = selected_sites
         dist_lst = []
         for idx_combo in itertools.combinations(idx_lst,2):
             dist = init_slab.get_distance(idx_combo[0], idx_combo[1])
             dist_lst.append(dist)
             #measures the distance between the sites
-        if (n_sites == 1) or (dist_reduce < min(dist_lst)):
-            coord_combos.append(combo_dict)
+        if actual_coverage:
+            if (n_sites == 1) or (dist_reduce < min(dist_lst)):
+                coord_combos.append(combo_dict)
     return coord_combos
 
 def save_site_combos(slab, adsorbate, path, coverage, height=0.9,
-                     dist_reduce=2.1, symm_reduce=False, ref_species=None):
+                     dist_reduce=2.1, symm_reduce=False, ref_species=None,no_bridge=False):
     coord_combos = create_coord_combos(slab, coverage, ref_species=ref_species, height=height, dist_reduce=dist_reduce)
     if symm_reduce:
         coord_combos = combo_symm_reduce(slab,coord_combos)
+    if no_bridge:
+        coord_combos = [name for name in coord_combos if 'bridge' not in list(name.keys())[0]]
+    print(len(coord_combos))
     for combo in coord_combos:
         fin_slab = slab.copy()
         sites = list(combo.values())[0]
@@ -157,13 +182,14 @@ def save_site_combos(slab, adsorbate, path, coverage, height=0.9,
         #sf = AdsorbateSiteFinder(fin_slab)
         for site in sites:
             sf = AdsorbateSiteFinder(fin_slab)
-            fin_slab = sf.add_adsorbate(adsorbate,site)
+            fin_slab = sf.add_adsorbate(adsorbate,site,reorient=False)
         fin_slab = fin_slab.get_sorted_structure()
         #appends the specified adsorbate to the slab in the selected sites if the distance between the sites is more than a specified number of angstroms
             
         if not os.path.exists('%s\\%s'  %(path, dirname)):
             os.makedirs('%s\\%s' %(path, dirname))
         fin_slab.to('poscar','%s\\%s\\POSCAR'%(path, dirname))
+        
         #stores the generated slabs with adsorbates in a local directory
 
 def combo_symm_reduce(slab, coord_combos):
